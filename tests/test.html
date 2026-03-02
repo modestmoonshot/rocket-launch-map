@@ -82,7 +82,8 @@
       const p0 = 101325;
 
       QUnit.test('at sea level vertical ascent: dv/dt is positive', assert => {
-        const state = [R_EARTH, 10, Math.PI / 2, 0, 500000];
+        // mass = 30000 kg gives TWR ≈ 1.7 with thrustSL = 500 kN → net upward acceleration
+        const state = [R_EARTH, 10, Math.PI / 2, 0, 30000];
         const d = derivatives(state, engine, p0);
         assert.ok(d[1] > 0, `dv/dt = ${d[1].toFixed(2)} should be positive`);
       });
