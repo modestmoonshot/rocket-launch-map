@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Rocket Launch Map — Tests</title>
+  <link rel="stylesheet" href="https://code.jquery.com/qunit/qunit-2.20.0.css">
+</head>
+<body>
+  <div id="qunit"></div>
+  <div id="qunit-fixture"></div>
+  <script src="https://code.jquery.com/qunit/qunit-2.20.0.js"></script>
+  <script type="module">
+    // ── assert.close helper ──────────────────────────────────────────────────
+    QUnit.assert.close = function(actual, expected, delta, message) {
+      const passed = Math.abs(actual - expected) <= delta;
+      this.pushResult({ result: passed, actual, expected: `${expected} ± ${delta}`, message });
+    };
+
+    // ── Scaffold ─────────────────────────────────────────────────────────────
+    QUnit.module('Scaffold', () => {
+      QUnit.test('test harness works', assert => {
+        assert.ok(true, 'QUnit is running');
+      });
+    });
+
+    // ── Atmosphere (USSA-1976) ────────────────────────────────────────────────
+    import { getAtmosphere } from '../js/atmosphere.js';
+
+    QUnit.module('Atmosphere (USSA-1976)', () => {
+      QUnit.test('sea level values match standard', assert => {
+        const atm = getAtmosphere(0);
+        assert.close(atm.pressure_pa,      101325, 1,     'sea level pressure ≈ 101325 Pa');
+        assert.close(atm.temperature_k,    288.15, 0.01,  'sea level temp = 288.15 K');
+        assert.close(atm.density_kgm3,     1.225,  0.005, 'sea level density ≈ 1.225 kg/m³');
+        assert.close(atm.speed_of_sound_ms, 340.3, 0.5,   'sea level SoS ≈ 340 m/s');
+      });
+
+      QUnit.test('tropopause (11000 m) temperature', assert => {
+        const atm = getAtmosphere(11000);
+        assert.close(atm.temperature_k, 216.65, 0.1, 'tropopause = 216.65 K');
+      });
+
+      QUnit.test('pressure decreases with altitude', assert => {
+        const low  = getAtmosphere(1000);
+        const high = getAtmosphere(10000);
+        assert.ok(high.pressure_pa < low.pressure_pa, 'pressure drops with altitude');
+      });
+
+      QUnit.test('density near zero at 80 km', assert => {
+        const atm = getAtmosphere(80000);
+        assert.ok(atm.density_kgm3 < 0.001, 'near-vacuum at 80 km');
+      });
+
+      QUnit.test('above 86 km returns zero density', assert => {
+        const atm = getAtmosphere(90000);
+        assert.strictEqual(atm.density_kgm3, 0, 'vacuum above 86 km');
+      });
+
+      QUnit.test('negative altitude clamps to sea level', assert => {
+        const atm = getAtmosphere(-500);
+        assert.close(atm.pressure_pa, 101325, 1, 'negative alt treated as 0');
+      });
+    });
+
+    // ── Physics ───────────────────────────────────────────────────────────────
+    import { derivatives, rk4Step } from '../js/physics.js';
+
+    QUnit.module('Physics', () => {
+      const R_EARTH = 6371000;
+
+      const engine = {
+        active:    true,
+        dryMass:   5000,
+        thrustSL:  500000,
+        thrustVac: 550000,
+        ispSL:     280,
+        ispVac:    320,
+        refArea:   10,
+        cdCurve:   [[0, 0.3], [1, 0.5], [3, 0.3], [8, 0.2]],
+      };
+
+      const p0 = 101325;
+
+      QUnit.test('at sea level vertical ascent: dv/dt is positive', assert => {
+        const state = [R_EARTH, 10, Math.PI / 2, 0, 500000];
+        const d = derivatives(state, engine, p0);
+        assert.ok(d[1] > 0, `dv/dt = ${d[1].toFixed(2)} should be positive`);
+      });
+
+      QUnit.test('dr/dt equals v * sin(gamma)', assert => {
+        const state = [R_EARTH + 10000, 500, Math.PI / 4, 0, 100000];
+        const d = derivatives(state, engine, p0);
+        const expected = 500 * Math.sin(Math.PI / 4);
+        assert.close(d[0], expected, 0.01, 'dr/dt = v·sin(γ)');
+      });
+
+      QUnit.test('dm/dt is negative when engine is burning', assert => {
+        const state = [R_EARTH, 10, Math.PI / 2, 0, 500000];
+        const d = derivatives(state, engine, p0);
+        assert.ok(d[4] < 0, 'mass decreases while burning');
+      });
+
+      QUnit.test('thrust is zero when engine is off', assert => {
+        const offEngine = { ...engine, active: false };
+        const state = [R_EARTH + 200000, 7800, 0.05, 0.1, 10000];
+        const d = derivatives(state, offEngine, p0);
+        assert.strictEqual(d[4], 0, 'no mass flow when engine off');
+      });
+
+      QUnit.test('rk4Step preserves state length', assert => {
+        const state = [R_EARTH, 10, Math.PI / 2, 0, 500000];
+        const newState = rk4Step(state, 0.5, engine, p0);
+        assert.strictEqual(newState.length, 5, 'state stays 5-element');
+      });
+
+      QUnit.test('rk4Step: altitude increases during vertical ascent', assert => {
+        const state = [R_EARTH, 100, Math.PI / 2, 0, 500000];
+        const newState = rk4Step(state, 0.5, engine, p0);
+        assert.ok(newState[0] > state[0], 'r increases when heading upward');
+      });
+
+      QUnit.test('more thrust gives higher dv/dt (Cd sanity check)', assert => {
+        const state = [R_EARTH, 150, Math.PI / 2, 0, 500000];
+        const d = derivatives(state, engine, p0);
+        const bigEngine = { ...engine, thrustSL: 1e9, thrustVac: 1e9 };
+        const dBig = derivatives(state, bigEngine, p0);
+        assert.ok(dBig[1] > d[1], 'more thrust → higher dv/dt');
+      });
+    });
+
+    // ── Simulation ────────────────────────────────────────────────────────────
+    import { runSimulation } from '../js/simulation.js';
+    import { getRocketConfig } from '../js/rockets.js';
+
+    QUnit.module('Simulation', () => {
+      const capeLaunch = { lat: 28.6, lon: -80.6, azimuth: 53 };
+      const t0 = '2026-03-02T02:43:00Z';
+
+      QUnit.test('Electron produces at least 50 waypoints', assert => {
+        const config = getRocketConfig('Electron');
+        const wps = runSimulation(config, capeLaunch, t0);
+        assert.ok(wps.length >= 50, `got ${wps.length} waypoints`);
+      });
+
+      QUnit.test('first waypoint is near launch site', assert => {
+        const config = getRocketConfig('Electron');
+        const wps = runSimulation(config, capeLaunch, t0);
+        const first = wps[0];
+        assert.close(first.lat, 28.6, 0.5, 'first lat near launch site');
+        assert.close(first.lon, -80.6, 0.5, 'first lon near launch site');
+      });
+
+      QUnit.test('altitude increases early in flight', assert => {
+        const config = getRocketConfig('Electron');
+        const wps = runSimulation(config, capeLaunch, t0);
+        const early = wps.slice(0, 10);
+        for (let i = 1; i < early.length; i++) {
+          assert.ok(
+            early[i].alt_km >= early[i-1].alt_km - 5,
+            `altitude non-decreasing at T+${early[i].t_plus_s}s`
+          );
+        }
+      });
+
+      QUnit.test('max altitude exceeds 100 km (past Karman line)', assert => {
+        const config = getRocketConfig('Electron');
+        const wps = runSimulation(config, capeLaunch, t0);
+        const maxAlt = Math.max(...wps.map(w => w.alt_km));
+        assert.ok(maxAlt > 100, `max alt = ${maxAlt.toFixed(0)} km`);
+      });
+
+      QUnit.test('each waypoint has required fields', assert => {
+        const config = getRocketConfig('Falcon 9');
+        const wps = runSimulation(config, capeLaunch, t0);
+        const wp = wps[10];
+        assert.ok('lat'          in wp, 'has lat');
+        assert.ok('lon'          in wp, 'has lon');
+        assert.ok('alt_km'       in wp, 'has alt_km');
+        assert.ok('velocity_ms'  in wp, 'has velocity_ms');
+        assert.ok('stage'        in wp, 'has stage');
+        assert.ok('t_plus_s'     in wp, 'has t_plus_s');
+        assert.ok('timestamp_utc' in wp, 'has timestamp_utc');
+      });
+
+      QUnit.test('stage number increments at staging event', assert => {
+        const config = getRocketConfig('Falcon 9');
+        const wps = runSimulation(config, capeLaunch, t0);
+        const stages = [...new Set(wps.map(w => w.stage))].sort();
+        assert.ok(stages.length >= 2, `has ${stages.length} stages`);
+        assert.ok(stages.includes(1), 'has stage 1');
+        assert.ok(stages.includes(2), 'has stage 2');
+      });
+
+      QUnit.test('timestamps advance monotonically', assert => {
+        const config = getRocketConfig('Falcon 9');
+        const wps = runSimulation(config, capeLaunch, t0);
+        for (let i = 1; i < wps.length; i++) {
+          assert.ok(
+            wps[i].t_plus_s > wps[i-1].t_plus_s,
+            `T+${wps[i].t_plus_s}s > T+${wps[i-1].t_plus_s}s`
+          );
+        }
+      });
+    });
+  </script>
+</body>
+</html>

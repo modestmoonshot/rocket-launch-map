@@ -1,0 +1,114 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  display: flex;
+  height: 100vh;
+  font-family: system-ui, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+#sidebar {
+  width: 300px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1e293b;
+  overflow-y: auto;
+  padding: 16px;
+  gap: 8px;
+}
+
+#sidebar h1 {
+  font-size: 1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+#map-container {
+  flex: 1;
+  position: relative;
+}
+
+#map { width: 100%; height: 100%; }
+
+#map-loading {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 0.9rem;
+  color: #94a3b8;
+  z-index: 1000;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #334155;
+  border-top-color: #f97316;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.launch-card {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.launch-card:hover { border-color: #f97316; }
+.launch-card.selected { border-color: #f97316; background: #1c1917; }
+.launch-card.unavailable { opacity: 0.5; cursor: not-allowed; }
+
+.launch-name { font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; }
+.launch-vehicle { font-size: 0.75rem; color: #f97316; margin-bottom: 2px; }
+.launch-site { font-size: 0.75rem; color: #94a3b8; }
+.launch-time { font-size: 0.7rem; color: #64748b; margin-top: 4px; }
+.launch-unavailable-msg { font-size: 0.7rem; color: #ef4444; margin-top: 4px; }
+.launch-weather { font-size: 0.7rem; color: #64748b; margin-top: 2px; }
+
+.loading { color: #64748b; font-size: 0.85rem; }
+.error { color: #ef4444; font-size: 0.85rem; }
+
+/* Legend */
+#legend {
+  position: absolute;
+  bottom: 24px;
+  right: 10px;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+#legend .leg-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+#legend .leg-item:last-child { margin-bottom: 0; }
+
+.leg-swatch {
+  width: 20px;
+  height: 3px;
+  border-radius: 2px;
+}
